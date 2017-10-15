@@ -39,6 +39,15 @@ Compound Models
 Parenthesized and bracketed lists are parsed as compound models by the
 Hy parser.
 
+Hy uses pretty-printing reprs for its compound models by default.
+If this is causing issues,
+it can be turned off globally by setting ``hy.models.PRETTY`` to ``False``,
+or temporarily by using the ``hy.models.pretty`` context manager.
+
+Hy also attempts to color pretty reprs using ``clint.textui.colored``.
+This module has a flag to disable coloring,
+and a method ``clean`` to strip colored strings of their color tags.
+
 .. _hylist:
 
 HyList
@@ -102,7 +111,7 @@ HyString
 ~~~~~~~~
 
 ``hy.models.HyString`` is the base class of string-equivalent Hy
-models. It also represents double-quoted string literals, ``""``, which
+models. It also represents string literals (including bracket strings), which
 compile down to unicode string literals in Python. ``HyStrings`` inherit
 unicode objects in Python 2, and string objects in Python 3 (and are
 therefore not encoding-dependent).
@@ -112,6 +121,12 @@ therefore not encoding-dependent).
 Hy literal strings can span multiple lines, and are considered by the
 parser as a single unit, respecting the Python escapes for unicode
 strings.
+
+``HyString``\s have an attribute ``brackets`` that stores the custom
+delimiter used for a bracket string (e.g., ``"=="`` for ``#[==[hello
+world]==]`` and the empty string for ``#[[hello world]]``).
+``HyString``\s that are not produced by bracket strings have their
+``brackets`` set to ``None``.
 
 HyBytes
 ~~~~~~~
@@ -160,12 +175,7 @@ HyKeyword
 ~~~~~~~~~
 
 ``hy.models.HyKeyword`` represents keywords in Hy. Keywords are
-symbols starting with a ``:``. The class inherits :ref:`HyString`.
-
-To distinguish :ref:`HyKeywords <HyKeyword>` from :ref:`HySymbols
-<HySymbol>`, without the possibility of (involuntary) clashes, the
-private-use unicode character ``"\uFDD0"`` is prepended to the keyword
-literal before storage.
+symbols starting with a ``:``. See :ref:`syntax-keywords`.
 
 .. _hycons:
 
@@ -465,5 +475,4 @@ Checking Macro Arguments and Raising Exceptions
 Hy Compiler Built-Ins
 =====================
 
-.. todo::
-    Write this.
+.. TODO: Write this.

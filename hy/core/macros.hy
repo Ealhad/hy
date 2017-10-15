@@ -1,33 +1,13 @@
 ;;; Hy core macros
-;;
-;; Copyright (c) 2013 Nicolas Dandrimont <nicolas.dandrimont@crans.org>
-;; Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-;; Copyright (c) 2013 Konrad Hinsen <konrad.hinsen@fastmail.net>
-;;
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-;;
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-;;
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
-;;
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 ;;; These macros form the hy language
 ;;; They are automatically required in every module, except inside hy.core
 
 
-(import [hy.models [HyList HySymbol]]
-        [hy._compat [PY33 PY34]])
+(import [hy.models [HyList HySymbol]])
 
 (defmacro as-> [head name &rest rest]
   "Expands to sequence of assignments to the provided name, starting with head.
@@ -39,6 +19,22 @@
          ~name ~head
          ~@(interleave (repeat name) rest))
      ~name))
+
+
+(defmacro assoc [coll k1 v1 &rest other-kvs]
+  (if (odd? (len other-kvs))
+    (macro-error (last other-kvs)
+                 "`assoc` takes an odd number of arguments"))
+  (setv c (if other-kvs
+            (gensym "c")
+            coll))
+  `(setv ~@(+ (if other-kvs
+                [c coll]
+                [])
+              #* (genexpr [`(get ~c ~k) v]
+                          [[k v] (partition (+ (, k1 v1)
+                                               other-kvs))]))))
+
 
 (defmacro with [args &rest body]
   "shorthand for nested with* loops:
@@ -59,16 +55,6 @@
     `(do ~@body)))
 
 
-(defmacro car [thing]
-  "Get the first element of a list/cons"
-  `(get ~thing 0))
-
-
-(defmacro cdr [thing]
-  "Get all the elements of a thing, except the first"
-  `(cut ~thing 1))
-
-
 (defmacro cond [&rest branches]
   "shorthand for nested ifs:
    (cond [foo bar] [baz quux]) ->
@@ -86,10 +72,10 @@
        (if (not (= (type branch) HyList))
          (macro-error branch "cond branches need to be a list"))
        (if (< (len branch) 2)
-         (macro-error branch "cond branches need at least two items: a test and one or more code branches"))
-       (setv test (car branch))
-       (setv thebranch (cdr branch))
-       `(if ~test (do ~@thebranch)))
+         (do
+           (setv g (gensym))
+           `(if (do (setv ~g ~(first branch)) ~g) ~g))
+         `(if ~(first branch) (do ~@(cut branch 1)))))
 
      (setv root (check-branch branch))
      (setv latest-branch root)
@@ -116,16 +102,14 @@
   (setv belse (if (and (isinstance lst HyExpression) (= (get lst 0) "else"))
                 [(body.pop)]
                 []))
-  (cond
-   [(odd? (len args))
-    (macro-error args "`for' requires an even number of args.")]
-   [(empty? body)
-    (macro-error None "`for' requires a body to evaluate")]
-   [(empty? args) `(do ~@body ~@belse)]
-   [(= (len args) 2) `(for* [~@args] (do ~@body) ~@belse)]
-   [True
-    (setv alist (cut args 0 None 2))
-    `(for* [(, ~@alist) (genexpr (, ~@alist) [~@args])] (do ~@body) ~@belse)]))
+  (if
+    (odd? (len args)) (macro-error args "`for' requires an even number of args.")
+    (empty? body)     (macro-error None "`for' requires a body to evaluate")
+    (empty? args)     `(do ~@body ~@belse)
+    (= (len args) 2)  `(for* [~@args] (do ~@body) ~@belse)
+    (do
+      (setv alist (cut args 0 None 2))
+      `(for* [(, ~@alist) (genexpr (, ~@alist) [~@args])] (do ~@body) ~@belse))))
 
 
 (defmacro -> [head &rest rest]
@@ -231,36 +215,22 @@
      `(do (setv ~@(interleave ~gs ~os))
           ~@~body)))
 
-(if-python2
-  (defmacro/g! yield-from [expr]
-    `(do (import types)
-         (setv ~g!iter (iter ~expr))
-         (setv ~g!return None)
-         (setv ~g!message None)
-         (while True
-           (try (if (isinstance ~g!iter types.GeneratorType)
-                  (setv ~g!message (yield (.send ~g!iter ~g!message)))
-                  (setv ~g!message (yield (next ~g!iter))))
-           (except [~g!e StopIteration]
-             (do (setv ~g!return (if (hasattr ~g!e "value")
-                                     (. ~g!e value)
-                                     None))
-               (break)))))
-           ~g!return))
-  None)
-
 
 (defmacro defmain [args &rest body]
   "Write a function named \"main\" and do the if __main__ dance"
   (setv retval (gensym))
   `(when (= --name-- "__main__")
      (import sys)
-     (setv ~retval (apply (fn [~@args] ~@body) sys.argv))
+     (setv ~retval ((fn [~@args] ~@body) #* sys.argv))
      (if (integer? ~retval)
        (sys.exit ~retval))))
 
 
-(defreader @ [expr]
+(deftag @ [expr]
   (setv decorators (cut expr None -1)
         fndef (get expr -1))
   `(with-decorator ~@decorators ~fndef))
+
+(defmacro comment [&rest body]
+  "Ignores body and always expands to None"
+  None)

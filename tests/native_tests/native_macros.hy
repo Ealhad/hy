@@ -1,3 +1,7 @@
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 (import [hy.errors [HyTypeError]])
 
 (defmacro rev [&rest body]
@@ -79,6 +83,14 @@
 (defn test-fn-calling-macro []
   "NATIVE: test macro calling a plain function"
   (assert (= 3 (bar 1 2))))
+
+(defn test-optional-and-unpacking-in-macro []
+  ; https://github.com/hylang/hy/issues/1154
+  (defn f [&rest args]
+    (+ "f:" (repr args)))
+  (defmacro mac [&optional x]
+   `(f #* [~x]))
+  (assert (= (mac) "f:(None,)")))
 
 (defn test-midtree-yield []
   "NATIVE: test yielding with a returnable"
@@ -292,31 +304,6 @@
   (assert (= (lif-not (+ 1 2 3) "false" "true") "true"))
   (assert (= (lif-not None "false" "true") "false"))
   (assert (= (lif-not 0 "false" "true") "true")))
-
-
-(defn test-yield-from []
-  "NATIVE: testing yield from"
-  (defn yield-from-test []
-    (for* [i (range 3)]
-      (yield i))
-    (yield-from [1 2 3]))
-  (assert (= (list (yield-from-test)) [0 1 2 1 2 3])))
-
-(defn test-yield-from-exception-handling []
-  "NATIVE: Ensure exception handling in yield from works right"
-  (defn yield-from-subgenerator-test []
-    (yield 1)
-    (yield 2)
-    (yield 3)
-    (assert 0))
-  (defn yield-from-test []
-    (for* [i (range 3)]
-       (yield i))
-    (try
-     (yield-from (yield-from-subgenerator-test))
-     (except [e AssertionError]
-       (yield 4))))
-  (assert (= (list (yield-from-test)) [0 1 2 1 2 3 4])))
 
 
 (defn test-defmain []

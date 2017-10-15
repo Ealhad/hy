@@ -1,27 +1,8 @@
 ;;; Hy anaphoric macros
-;;
-;; Copyright (c) 2013 James King <james@agentultra.com>
-;;               2013 Paul R. Tagliamonte <tag@pault.ag>
-;;               2013 Abhishek L <abhishek.lekshmanan@gmail.com>
-;;
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-;;
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-;;
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
-;;
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 ;;; These macros make writing functional programs more concise
 
 
@@ -114,8 +95,8 @@
 (defmacro ap-reduce [form lst &optional [initial-value None]]
   "Anaphoric form of reduce, `acc' and `it' can be used for a form"
   `(do
-    (setv acc ~(if (none? initial-value) `(car ~lst) initial-value))
-    (ap-each ~(if (none? initial-value) `(cdr ~lst) lst)
+    (setv acc ~(if (none? initial-value) `(get ~lst 0) initial-value))
+    (ap-each ~(if (none? initial-value) `(cut ~lst 1) lst)
       (setv acc ~form))
     acc))
 
@@ -142,11 +123,11 @@
                                     (str i)))
                        [i (range 1
                                  ;; find the maximum xi
-                                 (inc (max (+ (list-comp (int (cdr a))
+                                 (inc (max (+ (list-comp (int (cut a 1))
                                                          [a flatbody]
                                                          (and (symbol? a)
                                                               (.startswith a 'x)
-                                                              (.isdigit (cdr a))))
+                                                              (.isdigit (cut a 1))))
                                               [0]))))])
             ;; generate the &rest parameter only if 'xi is present in body
             ~@(if (in 'xi flatbody)

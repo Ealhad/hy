@@ -1,3 +1,7 @@
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 (defn test-decorated-1line-function []
   (defn foodec [func]
     (fn [] (+ (func) 1)))
@@ -28,19 +32,11 @@
   (assert (= cls.attr2 456)))
 
 
-(defn test-decorated-setv []
-  (defn d [func]
-    (fn [] (+ (func) "z")))
-  (with-decorator d
-    (setv f (fn [] "hello")))
-  (assert (= (f) "helloz")))
-
-
 (defn test-decorator-clobbing []
   "NATIVE: Tests whether nested decorators work"
   (do
-    (defn dec1 [f] (defn k [] (+ (f) 1)))
-    (defn dec2 [f] (defn k [] (+ (f) 2)))
+    (defn dec1 [f] (fn [] (+ (f) 1)))
+    (defn dec2 [f] (fn [] (+ (f) 2)))
     (with-decorator dec1
       (with-decorator dec2
         (defn f [] 1)))

@@ -1,3 +1,7 @@
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 (require [hy.contrib.loop [loop]])
 (import sys)
 
@@ -44,3 +48,7 @@
      (assert True))
    (else
     (assert False))))
+
+(defn test-recur-string []
+  "test that `loop` doesn't touch a string named `recur`"
+  (assert (= (loop [] (+ "recur" "1")) "recur1")))

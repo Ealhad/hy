@@ -1,25 +1,30 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from __future__ import unicode_literals
+from contextlib import contextmanager
+from math import isnan, isinf
 from hy._compat import PY3, str_type, bytes_type, long_type, string_types
+from fractions import Fraction
+from clint.textui import colored
+
+
+PRETTY = True
+
+
+@contextmanager
+def pretty(pretty=True):
+    """
+    Context manager to temporarily enable
+    or disable pretty-printing of Hy model reprs.
+    """
+    global PRETTY
+    old, PRETTY = PRETTY, pretty
+    try:
+        yield
+    finally:
+        PRETTY = old
 
 
 class HyObject(object):
@@ -38,6 +43,9 @@ class HyObject(object):
             raise TypeError("Can't replace a non Hy object with a Hy object")
 
         return self
+
+    def __repr__(self):
+        return "%s(%s)" % (self.__class__.__name__, super(HyObject, self).__repr__())
 
 
 _wrappers = {}
@@ -73,13 +81,20 @@ def replace_hy_obj(obj, other):
                         % type(obj))
 
 
+def repr_indent(obj):
+    return repr(obj).replace("\n", "\n  ")
+
+
 class HyString(HyObject, str_type):
     """
     Generic Hy String object. Helpful to store string literals from Hy
     scripts. It's either a ``str`` or a ``unicode``, depending on the
     Python version.
     """
-    pass
+    def __new__(cls, s=None, brackets=None):
+        value = super(HyString, cls).__new__(cls, s)
+        value.brackets = brackets
+        return value
 
 _wrappers[str_type] = HyString
 
@@ -120,10 +135,15 @@ class HyKeyword(HyObject, str_type):
         obj = str_type.__new__(cls, value)
         return obj
 
+    def __repr__(self):
+        return "%s(%s)" % (self.__class__.__name__, repr(self[1:]))
+
 
 def strip_digit_separators(number):
-    return (number.replace("_", "").replace(",", "")
-            if isinstance(number, string_types)
+    # Don't strip a _ or , if it's the first character, as _42 and
+    # ,42 aren't valid numbers
+    return (number[0] + number[1:].replace("_", "").replace(",", "")
+            if isinstance(number, string_types) and len(number) > 1
             else number)
 
 
@@ -157,15 +177,24 @@ if not PY3:  # do not add long on python3
     _wrappers[long_type] = HyInteger
 
 
+def check_inf_nan_cap(arg, value):
+    if isinstance(arg, string_types):
+        if isinf(value) and "Inf" not in arg:
+            raise ValueError('Inf must be capitalized as "Inf"')
+        if isnan(value) and "NaN" not in arg:
+            raise ValueError('NaN must be capitalized as "NaN"')
+
+
 class HyFloat(HyObject, float):
     """
     Internal representation of a Hy Float. May raise a ValueError as if
     float(foo) was called, given HyFloat(foo).
     """
 
-    def __new__(cls, number, *args, **kwargs):
-        number = float(strip_digit_separators(number))
-        return super(HyFloat, cls).__new__(cls, number)
+    def __new__(cls, num, *args, **kwargs):
+        value = super(HyFloat, cls).__new__(cls, strip_digit_separators(num))
+        check_inf_nan_cap(num, value)
+        return value
 
 _wrappers[float] = HyFloat
 
@@ -176,9 +205,17 @@ class HyComplex(HyObject, complex):
     complex(foo) was called, given HyComplex(foo).
     """
 
-    def __new__(cls, number, *args, **kwargs):
-        number = complex(strip_digit_separators(number))
-        return super(HyComplex, cls).__new__(cls, number)
+    def __new__(cls, real, imag=0, *args, **kwargs):
+        if isinstance(real, string_types):
+            value = super(HyComplex, cls).__new__(
+                cls, strip_digit_separators(real)
+            )
+            p1, _, p2 = real.lstrip("+-").replace("-", "+").partition("+")
+            check_inf_nan_cap(p1, value.imag if "j" in p1 else value.real)
+            if p2:
+                check_inf_nan_cap(p2, value.imag)
+            return value
+        return super(HyComplex, cls).__new__(cls, real, imag)
 
 _wrappers[complex] = HyComplex
 
@@ -209,8 +246,22 @@ class HyList(HyObject, list):
 
         return ret
 
+    color = staticmethod(colored.cyan)
+
     def __repr__(self):
-        return "[%s]" % (" ".join([repr(x) for x in self]))
+        return str(self) if PRETTY else super(HyList, self).__repr__()
+
+    def __str__(self):
+        with pretty():
+            c = self.color
+            if self:
+                return ("{}{}\n  {}{}").format(
+                    c(self.__class__.__name__),
+                    c("(["),
+                    (c(",") + "\n  ").join([repr_indent(e) for e in self]),
+                    c("])"))
+            else:
+                return '' + c(self.__class__.__name__ + "()")
 
 _wrappers[list] = lambda l: HyList(wrap_value(x) for x in l)
 _wrappers[tuple] = lambda t: HyList(wrap_value(x) for x in t)
@@ -221,8 +272,24 @@ class HyDict(HyList):
     HyDict (just a representation of a dict)
     """
 
-    def __repr__(self):
-        return "{%s}" % (" ".join([repr(x) for x in self]))
+    def __str__(self):
+        with pretty():
+            g = colored.green
+            if self:
+                pairs = []
+                for k, v in zip(self[::2],self[1::2]):
+                    k, v = repr_indent(k), repr_indent(v)
+                    pairs.append(
+                        ("{0}{c}\n  {1}\n  "
+                         if '\n' in k+v
+                         else "{0}{c} {1}").format(k, v, c=g(',')))
+                if len(self) % 2 == 1:
+                    pairs.append("{}  {}\n".format(
+                        repr_indent(self[-1]), g("# odd")))
+                return "{}\n  {}{}".format(
+                    g("HyDict(["), ("{c}\n  ".format(c=g(',')).join(pairs)), g("])"))
+            else:
+                return '' + g("HyDict()")
 
     def keys(self):
         return self[0::2]
@@ -240,20 +307,18 @@ class HyExpression(HyList):
     """
     Hy S-Expression. Basically just a list.
     """
-
-    def __repr__(self):
-        return "(%s)" % (" ".join([repr(x) for x in self]))
+    color = staticmethod(colored.yellow)
 
 _wrappers[HyExpression] = lambda e: HyExpression(wrap_value(x) for x in e)
+_wrappers[Fraction] = lambda e: HyExpression(
+    [HySymbol("fraction"), wrap_value(e.numerator), wrap_value(e.denominator)])
 
 
 class HySet(HyList):
     """
     Hy set (just a representation of a set)
     """
-
-    def __repr__(self):
-        return "#{%s}" % (" ".join([repr(x) for x in self]))
+    color = staticmethod(colored.red)
 
 _wrappers[set] = lambda s: HySet(wrap_value(x) for x in s)
 
@@ -329,10 +394,24 @@ class HyCons(HyObject):
         HyObject.replace(self, other)
 
     def __repr__(self):
-        if isinstance(self.cdr, self.__class__):
-            return "(%s %s)" % (repr(self.car), repr(self.cdr)[1:-1])
+        if PRETTY:
+            return str(self)
         else:
-            return "(%s . %s)" % (repr(self.car), repr(self.cdr))
+            return "HyCons({}, {})".format(
+                repr(self.car), repr(self.cdr))
+
+    def __str__(self):
+        with pretty():
+            c = colored.yellow
+            lines = ['' + c("<HyCons (")]
+            while True:
+                lines.append("  " + repr_indent(self.car))
+                if not isinstance(self.cdr, HyCons):
+                    break
+                self = self.cdr
+            lines.append("{} {}{}".format(
+                c("."), repr_indent(self.cdr), c(")>")))
+            return '\n'.join(lines)
 
     def __eq__(self, other):
         return (

@@ -1,32 +1,16 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-# Copyright (c) 2013 Julien Danjou <julien@danjou.info>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# -*- encoding: utf-8 -*-
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from __future__ import unicode_literals
 
 from hy import HyString
 from hy.models import HyObject
 from hy.compiler import hy_compile
+from hy.importer import import_buffer_to_hst
 from hy.errors import HyCompileError, HyTypeError
 from hy.lex.exceptions import LexException
-from hy.lex import tokenize
 from hy._compat import PY3
 
 import ast
@@ -42,12 +26,12 @@ def _ast_spotcheck(arg, root, secondary):
 
 
 def can_compile(expr):
-    return hy_compile(tokenize(expr), "__main__")
+    return hy_compile(import_buffer_to_hst(expr), "__main__")
 
 
 def cant_compile(expr):
     try:
-        hy_compile(tokenize(expr), "__main__")
+        hy_compile(import_buffer_to_hst(expr), "__main__")
         assert False
     except HyTypeError as e:
         # Anything that can't be compiled should raise a user friendly
@@ -63,10 +47,16 @@ def cant_compile(expr):
         return e
 
 
+def s(x):
+    return can_compile(x).body[0].value.s
+
+
 def test_ast_bad_type():
     "Make sure AST breakage can happen"
+    class C:
+        pass
     try:
-        hy_compile("foo", "__main__")
+        hy_compile(C(), "__main__")
         assert True is False
     except HyCompileError:
         pass
@@ -130,23 +120,26 @@ def test_ast_bad_raise():
 
 def test_ast_good_try():
     "Make sure AST can compile valid try"
-    can_compile("(try)")
-    can_compile("(try 1)")
     can_compile("(try 1 (except) (else 1))")
-    can_compile("(try 1 (else 1) (except))")
-    can_compile("(try 1 (finally 1) (except))")
     can_compile("(try 1 (finally 1))")
     can_compile("(try 1 (except) (finally 1))")
-    can_compile("(try 1 (except) (finally 1) (else 1))")
+    can_compile("(try 1 (except [x]) (except [y]) (finally 1))")
     can_compile("(try 1 (except) (else 1) (finally 1))")
+    can_compile("(try 1 (except [x]) (except [y]) (else 1) (finally 1))")
 
 
 def test_ast_bad_try():
     "Make sure AST can't compile invalid try"
+    cant_compile("(try)")
+    cant_compile("(try 1)")
     cant_compile("(try 1 bla)")
     cant_compile("(try 1 bla bla)")
+    cant_compile("(try (do bla bla))")
     cant_compile("(try (do) (else 1) (else 2))")
     cant_compile("(try 1 (else 1))")
+    cant_compile("(try 1 (else 1) (except))")
+    cant_compile("(try 1 (finally 1) (except))")
+    cant_compile("(try 1 (except) (finally 1) (else 1))")
 
 
 def test_ast_good_except():
@@ -266,7 +259,7 @@ def test_ast_require():
 def test_ast_no_pointless_imports():
     def contains_import_from(code):
         return any([isinstance(node, ast.ImportFrom)
-                   for node in hy_compile(tokenize(code), "__main__").body])
+                   for node in can_compile(code).body])
     # `reduce` is a builtin in Python 2, but not Python 3.
     # The version of `map` that returns an iterator is a builtin in
     # Python 3, but not Python 2.
@@ -336,6 +329,7 @@ def test_ast_bad_with():
 def test_ast_valid_while():
     "Make sure AST can't compile invalid while"
     can_compile("(while foo bar)")
+    can_compile("(while foo bar (else baz))")
 
 
 def test_ast_valid_for():
@@ -343,9 +337,11 @@ def test_ast_valid_for():
     can_compile("(for [a 2] (print a))")
 
 
-def test_ast_invalid_for():
-    "Make sure AST can't compile invalid for"
-    cant_compile("(for* [a 1] (else 1 2))")
+def test_nullary_break_continue():
+    can_compile("(while 1 (break))")
+    cant_compile("(while 1 (break 1))")
+    can_compile("(while 1 (continue))")
+    cant_compile("(while 1 (continue 1))")
 
 
 def test_ast_expression_basics():
@@ -474,7 +470,7 @@ def test_ast_unicode_strings():
         hy_s.start_line = hy_s.end_line = 0
         hy_s.start_column = hy_s.end_column = 0
 
-        code = hy_compile([hy_s], "__main__")
+        code = hy_compile(hy_s, "__main__")
 
         # code == ast.Module(body=[ast.Expr(value=ast.Str(s=xxx))])
         return code.body[0].value.s
@@ -485,12 +481,31 @@ def test_ast_unicode_strings():
 
 
 def test_ast_unicode_vs_bytes():
-    def f(x): return hy_compile(tokenize(x), "__main__").body[0].value.s
-    assert f('"hello"') == u"hello"
-    assert type(f('"hello"')) is (str if PY3 else unicode)  # noqa
-    assert f('b"hello"') == (eval('b"hello"') if PY3 else "hello")
-    assert type(f('b"hello"')) == (bytes if PY3 else str)
-    assert f('b"\\xa0"') == (bytes([160]) if PY3 else chr(160))
+    assert s('"hello"') == u"hello"
+    assert type(s('"hello"')) is (str if PY3 else unicode)  # noqa
+    assert s('b"hello"') == (eval('b"hello"') if PY3 else "hello")
+    assert type(s('b"hello"')) is (bytes if PY3 else str)
+    assert s('b"\\xa0"') == (bytes([160]) if PY3 else chr(160))
+
+
+def test_ast_bracket_string():
+    assert s(r'#[[empty delims]]') == 'empty delims'
+    assert s(r'#[my delim[fizzle]my delim]') == 'fizzle'
+    assert s(r'#[[]]') == ''
+    assert s(r'#[my delim[]my delim]') == ''
+    assert type(s('#[X[hello]X]')) is (str if PY3 else unicode)  # noqa
+    assert s(r'#[X[raw\nstring]X]') == 'raw\\nstring'
+    assert s(r'#[foozle[aa foozli bb ]foozle]') == 'aa foozli bb '
+    assert s(r'#[([unbalanced](]') == 'unbalanced'
+    assert s(r'#[(1💯@)} {a![hello world](1💯@)} {a!]') == 'hello world'
+    assert (s(r'''#[X[
+Remove the leading newline, please.
+]X]''') == 'Remove the leading newline, please.\n')
+    assert (s(r'''#[X[
+
+
+Only one leading newline should be removed.
+]X]''') == '\n\nOnly one leading newline should be removed.\n')
 
 
 def test_compile_error():
@@ -498,7 +513,7 @@ def test_compile_error():
     try:
         can_compile("(fn [] (in [1 2 3]))")
     except HyTypeError as e:
-        assert(e.message == "`in' needs at least 2 arguments, got 1.")
+        assert(e.message == "`in' needs 2 arguments, got 1")
     else:
         assert(False)
 
@@ -600,3 +615,39 @@ def test_setv_builtins():
         (defn get [self] 42))
       (defn if* [self] 0))
     """)
+
+
+def test_lots_of_comment_lines():
+    # https://github.com/hylang/hy/issues/1313
+    can_compile(1000 * ";\n")
+
+
+def test_exec_star():
+
+    code = can_compile('(exec* "print(5)")').body[0]
+    assert type(code) == (ast.Expr if PY3 else ast.Exec)
+    if not PY3:
+        assert code.body.s == "print(5)"
+        assert code.globals is None
+        assert code.locals is None
+
+    code = can_compile('(exec* "print(a)" {"a" 3})').body[0]
+    assert type(code) == (ast.Expr if PY3 else ast.Exec)
+    if not PY3:
+        assert code.body.s == "print(a)"
+        assert code.globals.keys[0].s == "a"
+        assert code.locals is None
+
+    code = can_compile('(exec* "print(a + b)" {"a" "x"} {"b" "y"})').body[0]
+    assert type(code) == (ast.Expr if PY3 else ast.Exec)
+    if not PY3:
+        assert code.body.s == "print(a + b)"
+        assert code.globals.keys[0].s == "a"
+        assert code.locals.keys[0].s == "b"
+
+
+def test_compiler_macro_tag_try():
+    """Check that try forms within defmacro/deftag are compiled correctly"""
+    # https://github.com/hylang/hy/issues/1350
+    can_compile("(defmacro foo [] (try None (except [] None)) `())")
+    can_compile("(deftag foo [] (try None (except [] None)) `())")

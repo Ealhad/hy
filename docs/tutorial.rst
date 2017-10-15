@@ -26,6 +26,9 @@ This is pretty cool because it means Hy is several things:
    comfort of Python!
  - For everyone: a pleasant language that has a lot of neat ideas!
 
+Now this tutorial assumes you're running Hy on Python 3. So know things
+are a bit different if you're still using Python 2.
+
 
 Basic intro to Lisp for Pythonistas
 ===================================
@@ -41,7 +44,7 @@ A "hello world" program in Hy is actually super simple. Let's try it:
 See?  Easy!  As you may have guessed, this is the same as the Python
 version of::
 
-  print "hello world"
+  print("hello world")
 
 To add up some super simple math, we could do:
 
@@ -78,7 +81,7 @@ the Hy interpreter:
 
    (setv result (- (/ (+ 1 3 88) 2) 8))
 
-This would return 38.  But why?  Well, we could look at the equivalent
+This would return 38.0  But why?  Well, we could look at the equivalent
 expression in python::
 
   result = ((1 + 3 + 88) / 2) - 8
@@ -92,9 +95,9 @@ exercise first in Python::
   # simplified to...
   result = (92 / 2) - 8
   # simplified to...
-  result = 46 - 8
+  result = 46.0 - 8
   # simplified to...
-  result = 38
+  result = 38.0
 
 Now let's try the same thing in Hy:
 
@@ -104,12 +107,12 @@ Now let's try the same thing in Hy:
    ; simplified to...
    (setv result (- (/ 92 2) 8))
    ; simplified to...
-   (setv result (- 46 8))
+   (setv result (- 46.0 8))
    ; simplified to...
-   (setv result 38)
+   (setv result 38.0)
 
 As you probably guessed, this last expression with ``setv`` means to
-assign the variable "result" to 38.
+assign the variable "result" to 38.0.
 
 See?  Not too hard!
 
@@ -123,10 +126,10 @@ examples, so let's write a simple Python program, test it, and then
 show the equivalent Hy program::
 
   def simple_conversation():
-      print "Hello!  I'd like to get to know you.  Tell me about yourself!"
-      name = raw_input("What is your name? ")
-      age = raw_input("What is your age? ")
-      print "Hello " + name + "!  I see you are " + age + " years old."
+      print("Hello!  I'd like to get to know you.  Tell me about yourself!")
+      name = input("What is your name? ")
+      age = input("What is your age? ")
+      print("Hello " + name + "!  I see you are " + age + " years old.")
 
   simple_conversation()
 
@@ -143,8 +146,8 @@ Now let's look at the equivalent Hy program:
 
    (defn simple-conversation []
       (print "Hello!  I'd like to get to know you.  Tell me about yourself!")
-      (setv name (raw-input "What is your name? "))
-      (setv age (raw-input "What is your age? "))
+      (setv name (input "What is your name? "))
+      (setv age (input "What is your age? "))
       (print (+ "Hello " name "!  I see you are "
                  age " years old.")))
 
@@ -193,7 +196,6 @@ Hy.  Let's experiment with this in the hy interpreter::
   [1, 2, 3]
   => {"dog" "bark"
   ... "cat" "meow"}
-  ...
   {'dog': 'bark', 'cat': 'meow'}
   => (, 1 2 3)
   (1, 2, 3)
@@ -204,13 +206,27 @@ Hy.  Let's experiment with this in the hy interpreter::
 
 Notice the last two lines: Hy has a fraction literal like Clojure.
 
+If you start Hy like this (a shell alias might be helpful)::
+
+  $ hy --repl-output-fn=hy.contrib.hy-repr.hy-repr
+
+the interactive mode will use :ref:`hy-repr-fn` instead of Python's
+native ``repr`` function to print out values, so you'll see values in
+Hy syntax rather than Python syntax::
+
+  => [1 2 3]
+  [1 2 3]
+  => {"dog" "bark"
+  ... "cat" "meow"}
+  {"dog" "bark" "cat" "meow"}
+
 If you are familiar with other Lisps, you may be interested that Hy
 supports the Common Lisp method of quoting:
 
 .. code-block:: clj
 
    => '(1 2 3)
-   (1L 2L 3L)
+   (1 2 3)
 
 You also have access to all the built-in types' nice methods::
 
@@ -247,11 +263,11 @@ called ``cond``.  In Python, you might do something like::
 
   somevar = 33
   if somevar > 50:
-      print "That variable is too big!"
+      print("That variable is too big!")
   elif somevar < 10:
-      print "That variable is too small!"
+      print("That variable is too small!")
   else:
-      print "That variable is jussssst right!"
+      print("That variable is jussssst right!")
 
 In Hy, you would do:
 
@@ -317,7 +333,7 @@ Looping is not hard but has a kind of special structure.  In Python,
 we might do::
 
   for i in range(10):
-      print "'i' is now at " + str(i)
+      print("'i' is now at " + str(i))
 
 The equivalent in Hy would be:
 
@@ -348,7 +364,7 @@ Python's context managers (``with`` statements) are used like this:
 which is equivalent to::
 
   with open("/tmp/data.in") as f:
-      print f.read()
+      print(f.read())
 
 And yes, we do have List comprehensions!  In Python you might do::
 
@@ -410,8 +426,7 @@ The same thing in Hy::
   => (optional-arg 1 2 3 4)
   [1 2 3 4]
 
-If you're running a version of Hy past 0.10.1 (eg, git master),
-there's also a nice new keyword argument syntax::
+You can call keyword arguments like this::
 
   => (optional-arg :keyword1 1
   ...              :pos2 2
@@ -419,21 +434,13 @@ there's also a nice new keyword argument syntax::
   ...              :keyword2 4)
   [3, 2, 1, 4]
 
-Otherwise, you can always use `apply`.  But what's `apply`?
-
-Are you familiar with passing in `*args` and `**kwargs` in Python?::
-
-  >>> args = [1 2]
-  >>> kwargs = {"keyword2": 3
-  ...           "keyword1": 4}
-  >>> optional_arg(*args, **kwargs)
-
-We can reproduce this with `apply`::
+You can unpack arguments with the syntax ``#* args`` and ``#** kwargs``,
+similar to `*args` and `**kwargs` in Python::
 
   => (setv args [1 2])
   => (setv kwargs {"keyword2" 3
   ...              "keyword1" 4})
-  => (apply optional-arg args kwargs)
+  => (optional-arg #* args #** kwargs)
   [1, 2, 4, 3]
 
 There's also a dictionary-style keyword arguments construction that
@@ -447,7 +454,7 @@ looks like:
 The difference here is that since it's a dictionary, you can't rely on
 any specific ordering to the arguments.
 
-Hy also supports ``*args`` and ``**kwargs``.  In Python::
+Hy also supports ``*args`` and ``**kwargs`` in parameter lists.  In Python::
 
   def some_func(foo, bar, *args, **kwargs):
     import pprint
@@ -476,6 +483,11 @@ like::
           Return our copy of x
           """
           return self.x
+          
+And we might use it like::
+
+  bar = FooBar(1)
+  print(bar.get_x())
 
 
 In Hy:
@@ -491,7 +503,20 @@ In Hy:
     (defn get-x [self]
       "Return our copy of x"
       self.x))
+      
+And we can use it like:
 
+.. code-block:: clj
+
+  (setv bar (FooBar 1))
+  (print (bar.get-x))
+  
+Or using the leading dot syntax!
+
+.. code-block:: clj
+
+  (print (.get-x (FooBar 1)))
+      
 
 You can also do class-level attributes.  In Python::
 
@@ -531,7 +556,7 @@ we used "Tuukka" as parameter):
 
 .. code-block:: clj
 
-  (print "Hello there," Tuukka)
+  (print "Hello there," "Tuukka")
 
 We can also manipulate code with macros:
 
@@ -550,14 +575,14 @@ elements, so by the time program started executing, it actually reads:
 
   (+ 1 2 3)
 
-Sometimes it's nice to have a very short name for a macro that doesn't take much
-space or use extra parentheses. Reader macros can be pretty useful in these
-situations (and since Hy operates well with unicode, we aren't running out of
-characters that soon):
+Sometimes it's nice to be able to call a one-parameter macro without
+parentheses. Tag macros allow this. The name of a tag macro is typically
+one character long, but since Hy operates well with Unicode, we aren't running
+out of characters that soon:
 
 .. code-block:: clj
 
-  => (defreader ↻ [code]
+  => (deftag ↻ [code]
   ...  (setv op (last code) params (list (butlast code)))
   ...  `(~op ~@params))
   => #↻(1 2 3 +)
@@ -637,11 +662,15 @@ Let's take the classic:
 
 .. code-block:: clj
 
+    (require [hy.contrib.loop [loop]])
+
     (loop (print (eval (read))))
 
 Rather than write it like that, we can write it as follows:
 
 .. code-block:: clj
+
+    (require [hy.contrib.loop [loop]])
 
     (-> (read) (eval) (print) (loop))
 

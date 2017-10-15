@@ -1,24 +1,6 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-# Copyright (c) 2013 Julien Danjou <julien@danjou.info>
-# Copyright (c) 2013 Berker Peksag <berker.peksag@gmail.com>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 try:
     import __builtin__ as builtins
@@ -38,31 +20,13 @@ except ImportError:
                        (x >> 24) & 0xff]))
 import sys
 
-PY27 = sys.version_info >= (2, 7)
 PY3 = sys.version_info[0] >= 3
-PY33 = sys.version_info >= (3, 3)
-PY34 = sys.version_info >= (3, 4)
 PY35 = sys.version_info >= (3, 5)
 
-if PY3:
-    str_type = str
-else:
-    str_type = unicode  # NOQA
-
-if PY3:
-    bytes_type = bytes
-else:
-    bytes_type = str
-
-if PY3:
-    long_type = int
-else:
-    long_type = long  # NOQA
-
-if PY3:
-    string_types = str,
-else:
-    string_types = basestring,  # NOQA
+str_type     = str   if PY3 else unicode      # NOQA
+bytes_type   = bytes if PY3 else str          # NOQA
+long_type    = int   if PY3 else long         # NOQA
+string_types = str   if PY3 else basestring   # NOQA
 
 if PY3:
     exec('def raise_empty(t, *args): raise t(*args) from None')

@@ -1,28 +1,12 @@
 ;;; Hy tail-call optimization
-;;
-;; Copyright (c) 2014 Clinton Dreisbach <clinton@dreisbach.us>
-;; Copyright (c) 2014 Paul R. Tagliamonte <tag@pault.ag>
-;;
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-;;
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-;;
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
-;;
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
 ;;; The loop/recur macro allows you to construct functions that use tail-call
 ;;; optimization to allow arbitrary levels of recursion.
+
+(import [hy.contrib.walk [prewalk]])
 
 (defn --trampoline-- [f]
   "Wrap f function and make it tail-call optimized."
@@ -43,27 +27,20 @@
     (when (not (first active))
       (assoc active 0 True)
       (while (> (len accumulated) 0)
-        (setv result (apply f (.pop accumulated))))
+        (setv result (f #* (.pop accumulated))))
       (assoc active 0 False)
       result)))
 
-(defn recursive-replace [old-term new-term body]
-  "Recurses through lists of lists looking for old-term and replacing it with new-term."
-  ((type body)
-   (list-comp (cond
-               [(= term old-term) new-term]
-               [(instance? hy.HyList term)
-                (recursive-replace old-term new-term term)]
-               [True term]) [term body])))
-
 
 (defmacro/g! fnr [signature &rest body]
-  (setv new-body (recursive-replace 'recur g!recur-fn body))
+  (setv new-body (prewalk
+    (fn [x] (if (and (symbol? x) (= x "recur")) g!recur-fn x))
+    body))
   `(do
     (import [hy.contrib.loop [--trampoline--]])
     (with-decorator
       --trampoline--
-      (def ~g!recur-fn (fn [~@signature] ~@new-body)))
+      (defn ~g!recur-fn [~@signature] ~@new-body))
     ~g!recur-fn))
 
 

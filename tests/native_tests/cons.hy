@@ -1,3 +1,11 @@
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
+(defmacro car [x] `(get ~x 0))
+(defmacro cdr [x] `(cut ~x 1))
+
+
 (defn test-cons-mutability []
   "Test the mutability of conses"
   (setv tree (cons (cons 1 2) (cons 2 3)))

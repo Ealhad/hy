@@ -1,66 +1,36 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-# Copyright (c) 2014 Nicolas Dandrimont <nicolas.dandrimont@crans.org>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
+from math import isnan
 from hy.models import (HyExpression, HyInteger, HyFloat, HyComplex, HySymbol,
-                       HyString, HyDict, HyList, HySet, HyCons)
+                       HyString, HyDict, HyList, HySet, HyCons, HyKeyword)
 from hy.lex import LexException, PrematureEndOfInput, tokenize
+import pytest
+
+def peoi(): return pytest.raises(PrematureEndOfInput)
+def lexe(): return pytest.raises(LexException)
 
 
 def test_lex_exception():
     """ Ensure tokenize throws a fit on a partial input """
-    try:
-        tokenize("(foo")
-        assert True is False
-    except PrematureEndOfInput:
-        pass
-    try:
-        tokenize("{foo bar")
-        assert True is False
-    except PrematureEndOfInput:
-        pass
-    try:
-        tokenize("(defn foo [bar]")
-        assert True is False
-    except PrematureEndOfInput:
-        pass
-    try:
-        tokenize("(foo \"bar")
-        assert True is False
-    except PrematureEndOfInput:
-        pass
+    with peoi(): tokenize("(foo")
+    with peoi(): tokenize("{foo bar")
+    with peoi(): tokenize("(defn foo [bar]")
+    with peoi(): tokenize("(foo \"bar")
 
 
 def test_unbalanced_exception():
     """Ensure the tokenization fails on unbalanced expressions"""
-    try:
-        tokenize("(bar))")
-        assert True is False
-    except LexException:
-        pass
+    with lexe(): tokenize("(bar))")
+    with lexe(): tokenize("(baz [quux]])")
 
-    try:
-        tokenize("(baz [quux]])")
-        assert True is False
-    except LexException:
-        pass
+
+def test_lex_single_quote_err():
+    "Ensure tokenizing \"' \" throws a LexException that can be stringified"
+    # https://github.com/hylang/hy/issues/1252
+    with lexe() as e: tokenize("' ")
+    assert "Could not identify the next token" in str(e.value)
 
 
 def test_lex_expression_symbols():
@@ -99,6 +69,17 @@ bc"
     assert objs == [HyString("abc")]
 
 
+def test_lex_bracket_strings():
+
+    objs = tokenize("#[my delim[hello world]my delim]")
+    assert objs == [HyString("hello world")]
+    assert objs[0].brackets == "my delim"
+
+    objs = tokenize("#[[squid]]")
+    assert objs == [HyString("squid")]
+    assert objs[0].brackets == ""
+
+
 def test_lex_integers():
     """ Make sure that integers are valid expressions"""
     objs = tokenize("42 ")
@@ -122,16 +103,38 @@ def test_lex_expression_float():
     assert objs == [HyExpression([HySymbol("foo"), HyFloat(1.e7)])]
 
 
+def test_lex_nan_and_inf():
+
+    assert isnan(tokenize("NaN")[0])
+    assert tokenize("Nan") == [HySymbol("Nan")]
+    assert tokenize("nan") == [HySymbol("nan")]
+    assert tokenize("NAN") == [HySymbol("NAN")]
+
+    assert tokenize("Inf") == [HyFloat(float("inf"))]
+    assert tokenize("inf") == [HySymbol("inf")]
+    assert tokenize("INF") == [HySymbol("INF")]
+
+    assert tokenize("-Inf") == [HyFloat(float("-inf"))]
+    assert tokenize("-inf") == [HySymbol("_inf")]
+    assert tokenize("-INF") == [HySymbol("_INF")]
+
+
 def test_lex_expression_complex():
     """ Make sure expressions can produce complex """
-    objs = tokenize("(foo 2.j)")
-    assert objs == [HyExpression([HySymbol("foo"), HyComplex(2.j)])]
-    objs = tokenize("(foo -0.5j)")
-    assert objs == [HyExpression([HySymbol("foo"), HyComplex(-0.5j)])]
-    objs = tokenize("(foo 1.e7j)")
-    assert objs == [HyExpression([HySymbol("foo"), HyComplex(1.e7j)])]
-    objs = tokenize("(foo j)")
-    assert objs == [HyExpression([HySymbol("foo"), HySymbol("j")])]
+
+    def t(x): return tokenize("(foo {})".format(x))
+
+    def f(x): return [HyExpression([HySymbol("foo"), x])]
+
+    assert t("2.j") == f(HyComplex(2.j))
+    assert t("-0.5j") == f(HyComplex(-0.5j))
+    assert t("1.e7j") == f(HyComplex(1e7j))
+    assert t("j") == f(HySymbol("j"))
+    assert isnan(t("NaNj")[0][1].imag)
+    assert t("nanj") == f(HySymbol("nanj"))
+    assert t("Inf+Infj") == f(HyComplex(complex(float("inf"), float("inf"))))
+    assert t("Inf-Infj") == f(HyComplex(complex(float("inf"), float("-inf"))))
+    assert t("Inf-INFj") == f(HySymbol("Inf_INFj"))
 
 
 def test_lex_digit_separators():
@@ -155,9 +158,26 @@ def test_lex_digit_separators():
              HyInteger(12), HyInteger(34)])])
     assert tokenize("1,0_00j") == [HyComplex(1000j)]
 
-    assert tokenize(",,,,___,__1__,,__,,2__,,,__") == [HyInteger(12)]
-    assert (tokenize(",,,,___,__1__,,__,,2__,q,__") ==
-            [HySymbol(",,,,___,__1__,,__,,2__,q,__")])
+    assert tokenize("1,,,,___,____,,__,,2__,,,__") == [HyInteger(12)]
+    assert (tokenize("_1,,,,___,____,,__,,2__,,,__") ==
+            [HySymbol("_1,,,,___,____,,__,,2__,,,__")])
+    assert (tokenize("1,,,,___,____,,__,,2__,q,__") ==
+            [HySymbol("1,,,,___,____,,__,,2__,q,__")])
+
+
+def test_lex_bad_attrs():
+    with lexe(): tokenize("1.foo")
+    with lexe(): tokenize("0.foo")
+    with lexe(): tokenize("1.5.foo")
+    with lexe(): tokenize("1e3.foo")
+    with lexe(): tokenize("5j.foo")
+    with lexe(): tokenize("3+5j.foo")
+    with lexe(): tokenize("3.1+5.1j.foo")
+    assert tokenize("j.foo")
+    with lexe(): tokenize("3/4.foo")
+    assert tokenize("a/1.foo")
+    assert tokenize("1/a.foo")
+    with lexe(): tokenize(":hello.foo")
 
 
 def test_lex_line_counting():
@@ -294,12 +314,6 @@ def test_unicode_escapes():
     assert [ord(x) for x in entry] == [97, 172, 4660, 8364, 32768]
 
 
-def test_hashbang():
-    """ Ensure we can escape things """
-    entry = tokenize("#!this is a comment\n")
-    assert entry == []
-
-
 def test_complex():
     """Ensure we tokenize complex numbers properly"""
     # This is a regression test for #143
@@ -309,10 +323,10 @@ def test_complex():
     assert entry == HySymbol("j")
 
 
-def test_reader_macro():
-    """Ensure reader macros are handles properly"""
+def test_tag_macro():
+    """Ensure tag macros are handled properly"""
     entry = tokenize("#^()")
-    assert entry[0][0] == HySymbol("dispatch_reader_macro")
+    assert entry[0][0] == HySymbol("dispatch_tag_macro")
     assert entry[0][1] == HyString("^")
     assert len(entry[0]) == 3
 
@@ -422,3 +436,72 @@ def test_cons_list():
     entry = tokenize("(a b . {})")[0]
     assert entry == HyDict([HySymbol("a"), HySymbol("b")])
     assert type(entry) == HyDict
+
+def test_discard():
+    """Check that discarded terms are removed properly."""
+    # empty
+    assert tokenize("") == []
+    # single
+    assert tokenize("#_1") == []
+    # multiple
+    assert tokenize("#_1 #_2") == []
+    assert tokenize("#_1 #_2 #_3") == []
+    # nested discard
+    assert tokenize("#_ #_1 2") == []
+    assert tokenize("#_ #_ #_1 2 3") == []
+    # trailing
+    assert tokenize("0") == [0]
+    assert tokenize("0 #_1") == [0]
+    assert tokenize("0 #_1 #_2") == [0]
+    # leading
+    assert tokenize("2") == [2]
+    assert tokenize("#_1 2") == [2]
+    assert tokenize("#_0 #_1 2") == [2]
+    assert tokenize("#_ #_0 1 2") == [2]
+    # both
+    assert tokenize("#_1 2 #_3") == [2]
+    assert tokenize("#_0 #_1 2 #_ #_3 4") == [2]
+    # inside
+    assert tokenize("0 #_1 2") == [0, 2]
+    assert tokenize("0 #_1 #_2 3") == [0, 3]
+    assert tokenize("0 #_ #_1 2 3") == [0, 3]
+    # in HyList
+    assert tokenize("[]") == [HyList([])]
+    assert tokenize("[#_1]") == [HyList([])]
+    assert tokenize("[#_1 #_2]") == [HyList([])]
+    assert tokenize("[#_ #_1 2]") == [HyList([])]
+    assert tokenize("[0]") == [HyList([HyInteger(0)])]
+    assert tokenize("[0 #_1]") == [HyList([HyInteger(0)])]
+    assert tokenize("[0 #_1 #_2]") == [HyList([HyInteger(0)])]
+    assert tokenize("[2]") == [HyList([HyInteger(2)])]
+    assert tokenize("[#_1 2]") == [HyList([HyInteger(2)])]
+    assert tokenize("[#_0 #_1 2]") == [HyList([HyInteger(2)])]
+    assert tokenize("[#_ #_0 1 2]") == [HyList([HyInteger(2)])]
+    # in HySet
+    assert tokenize("#{}") == [HySet()]
+    assert tokenize("#{#_1}") == [HySet()]
+    assert tokenize("#{0 #_1}") == [HySet([HyInteger(0)])]
+    assert tokenize("#{#_1 0}") == [HySet([HyInteger(0)])]
+    # in HyDict
+    assert tokenize("{}") == [HyDict()]
+    assert tokenize("{#_1}") == [HyDict()]
+    assert tokenize("{#_0 1 2}") == [HyDict([HyInteger(1), HyInteger(2)])]
+    assert tokenize("{1 #_0 2}") == [HyDict([HyInteger(1), HyInteger(2)])]
+    assert tokenize("{1 2 #_0}") == [HyDict([HyInteger(1), HyInteger(2)])]
+    # in HyExpression
+    assert tokenize("()") == [HyExpression()]
+    assert tokenize("(#_foo)") == [HyExpression()]
+    assert tokenize("(#_foo bar)") == [HyExpression([HySymbol("bar")])]
+    assert tokenize("(foo #_bar)") == [HyExpression([HySymbol("foo")])]
+    assert tokenize("(foo :bar 1)") == [HyExpression([HySymbol("foo"), HyKeyword(":bar"), HyInteger(1)])]
+    assert tokenize("(foo #_:bar 1)") == [HyExpression([HySymbol("foo"), HyInteger(1)])]
+    assert tokenize("(foo :bar #_1)") == [HyExpression([HySymbol("foo"), HyKeyword(":bar")])]
+    # discard term with nesting
+    assert tokenize("[1 2 #_[a b c [d e [f g] h]] 3 4]") == [
+        HyList([HyInteger(1), HyInteger(2), HyInteger(3), HyInteger(4)])
+    ]
+    # discard with other prefix syntax
+    assert tokenize("a #_'b c") == [HySymbol("a"), HySymbol("c")]
+    assert tokenize("a '#_b c") == [HySymbol("a"), HyExpression([HySymbol("quote"), HySymbol("c")])]
+    assert tokenize("a '#_b #_c d") == [HySymbol("a"), HyExpression([HySymbol("quote"), HySymbol("d")])]
+    assert tokenize("a '#_ #_b c d") == [HySymbol("a"), HyExpression([HySymbol("quote"), HySymbol("d")])]

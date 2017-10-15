@@ -1,25 +1,9 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from inspect import getargspec, formatargspec
-from hy.models import replace_hy_obj, wrap_value, HyExpression, HyString
+from hy.models import replace_hy_obj, HyExpression, HySymbol
 
 from hy.errors import HyTypeError, HyMacroExpansionError
 
@@ -34,7 +18,7 @@ EXTRA_MACROS = [
 ]
 
 _hy_macros = defaultdict(dict)
-_hy_reader = defaultdict(dict)
+_hy_tag = defaultdict(dict)
 
 
 def macro(name):
@@ -66,8 +50,8 @@ def macro(name):
     return _
 
 
-def reader(name):
-    """Decorator to define a reader macro called `name`.
+def tag(name):
+    """Decorator to define a tag macro called `name`.
 
     This stores the macro `name` in the namespace for the module where it is
     defined.
@@ -75,14 +59,14 @@ def reader(name):
     If the module where it is defined is in `hy.core`, then the macro is stored
     in the default `None` namespace.
 
-    This function is called from the `defreader` special form in the compiler.
+    This function is called from the `deftag` special form in the compiler.
 
     """
     def _(fn):
         module_name = fn.__module__
         if module_name.startswith("hy.core"):
             module_name = None
-        _hy_reader[module_name][name] = fn
+        _hy_tag[module_name][name] = fn
 
         return fn
     return _
@@ -106,7 +90,7 @@ def require(source_module, target_module,
     if prefix:
         prefix += "."
 
-    for d in _hy_macros, _hy_reader:
+    for d in _hy_macros, _hy_tag:
         for name, macro in d[source_module].items():
             seen_names.add(name)
             if all_macros:
@@ -195,7 +179,7 @@ def macroexpand_1(tree, compiler):
 
         opts = {}
 
-        if isinstance(fn, HyString):
+        if isinstance(fn, HySymbol):
             m = _hy_macros[compiler.module_name].get(fn)
             if m is None:
                 m = _hy_macros[None].get(fn)
@@ -212,7 +196,7 @@ def macroexpand_1(tree, compiler):
                     raise HyMacroExpansionError(tree, msg)
 
                 try:
-                    obj = wrap_value(m(*ntree[1:], **opts))
+                    obj = m(*ntree[1:], **opts)
                 except HyTypeError as e:
                     if e.expression is None:
                         e.expression = tree
@@ -226,19 +210,19 @@ def macroexpand_1(tree, compiler):
     return tree
 
 
-def reader_macroexpand(char, tree, compiler):
-    """Expand the reader macro "char" with argument `tree`."""
+def tag_macroexpand(tag, tree, compiler):
+    """Expand the tag macro "tag" with argument `tree`."""
     load_macros(compiler.module_name)
 
-    reader_macro = _hy_reader[compiler.module_name].get(char)
-    if reader_macro is None:
+    tag_macro = _hy_tag[compiler.module_name].get(tag)
+    if tag_macro is None:
         try:
-            reader_macro = _hy_reader[None][char]
+            tag_macro = _hy_tag[None][tag]
         except KeyError:
             raise HyTypeError(
-                char,
-                "`{0}' is not a defined reader macro.".format(char)
+                tag,
+                "`{0}' is not a defined tag macro.".format(tag)
             )
 
-    expr = reader_macro(tree)
-    return replace_hy_obj(wrap_value(expr), tree)
+    expr = tag_macro(tree)
+    return replace_hy_obj(expr, tree)

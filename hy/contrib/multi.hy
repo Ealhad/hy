@@ -1,24 +1,7 @@
 ;; Hy Arity-overloading
-;; Copyright (c) 2014 Morten Linderud <mcfoxax@gmail.com>
-;; Copyright (c) 2016 Tuukka Turto <tuukka.turto@oktaeder.net>
-
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
 
 (import [collections [defaultdict]]
         [hy [HyExpression HyList HyString]])
@@ -43,21 +26,21 @@
       (.issubset (frozenset (.keys kwargs)) com)))
 
   __call__ (fn [self &rest args &kwargs kwargs]
-    (setv output None)
+    (setv func None)
     (for [[i f] (.items (get self._fns self.f.__module__ self.f.__name__))]
       (when (.fn? self i args kwargs)
-        (setv output (apply f args kwargs))
+        (setv func f)
         (break)))
-    (if output
-      output
+    (if func
+      (func #* args #** kwargs)
       (raise (TypeError "No matching functions with this signature"))))])
 
 (defn multi-decorator [dispatch-fn]
   (setv inner (fn [&rest args &kwargs kwargs]
-                (setv dispatch-key (apply dispatch-fn args kwargs))
+                (setv dispatch-key (dispatch-fn #* args #** kwargs))
                 (if (in dispatch-key inner.--multi--)
-                  (apply (get inner.--multi-- dispatch-key) args kwargs)
-                  (apply inner.--multi-default-- args kwargs))))
+                  ((get inner.--multi-- dispatch-key) #* args #** kwargs)
+                  (inner.--multi-default-- #* args #** kwargs))))
   (setv inner.--multi-- {})
   (setv inner.--doc-- dispatch-fn.--doc--)
   (setv inner.--multi-default-- (fn [&rest args &kwargs kwargs] None))
@@ -87,6 +70,9 @@
        (with-decorator (method-decorator ~name)
          (defn ~name ~params ~@body))))
 
+(defn head-tail [l]
+  (, (get l 0) (cut l 1)))
+
 (defmacro defn [name &rest bodies]
   (def arity-overloaded? (fn [bodies]
                            (if (isinstance (first bodies) HyString)
@@ -97,17 +83,14 @@
     (do
      (def comment (HyString))
      (if (= (type (first bodies)) HyString)
-       (do (def comment (car bodies))
-           (def bodies (cdr bodies))))
+       (def [comment bodies] (head-tail bodies)))
      (def ret `(do))
      (.append ret '(import [hy.contrib.multi [MultiDispatch]]))
      (for [body bodies]
-       (def let-binds (car body))
-       (def body (cdr body))
+       (def [let-binds body] (head-tail body))
        (.append ret 
                 `(with-decorator MultiDispatch (defn ~name ~let-binds ~comment ~@body))))
      ret)
     (do
-     (setv lambda-list (first bodies))
-     (setv body (rest bodies))
-     `(setv ~name (fn ~lambda-list ~@body)))))
+     (setv [lambda-list body] (head-tail bodies))
+     `(setv ~name (fn* ~lambda-list ~@body)))))

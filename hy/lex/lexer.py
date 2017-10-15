@@ -1,22 +1,6 @@
-# Copyright (c) 2013 Nicolas Dandrimont <nicolas.dandrimont@crans.org>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 from rply import LexerGenerator
 
@@ -28,6 +12,7 @@ lg = LexerGenerator()
 # i.e. a space or a closing brace/paren/curly
 end_quote = r'(?![\s\)\]\}])'
 
+identifier = r'[^()\[\]{}\'"\s;]+'
 
 lg.add('LPAREN', r'\(')
 lg.add('RPAREN', r'\)')
@@ -40,8 +25,15 @@ lg.add('QUOTE', r'\'%s' % end_quote)
 lg.add('QUASIQUOTE', r'`%s' % end_quote)
 lg.add('UNQUOTESPLICE', r'~@%s' % end_quote)
 lg.add('UNQUOTE', r'~%s' % end_quote)
-lg.add('HASHBANG', r'#!.*[^\r\n]')
-lg.add('HASHREADER', r'#[^{]')
+lg.add('DISCARD', r'#_')
+lg.add('HASHSTARS', r'#\*+')
+lg.add('BRACKETSTRING', r'''(?x)
+    \# \[ ( [^\[\]]* ) \[    # Opening delimiter
+    \n?                      # A single leading newline will be ignored
+    ((?:\n|.)*?)             # Content of the string
+    \] \1 \]                 # Closing delimiter
+    ''')
+lg.add('HASHOTHER', r'#%s' % identifier)
 
 # A regexp which matches incomplete strings, used to support
 # multi-line strings in the interpreter
@@ -60,7 +52,7 @@ partial_string = r'''(?x)
 lg.add('STRING', r'%s"' % partial_string)
 lg.add('PARTIAL_STRING', partial_string)
 
-lg.add('IDENTIFIER', r'[^()\[\]{}\'"\s;]+')
+lg.add('IDENTIFIER', identifier)
 
 
 lg.ignore(r';.*(?=\r|\n|$)')

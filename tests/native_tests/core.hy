@@ -1,23 +1,6 @@
-;; Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-;; Copyright (c) 2013, 2014 Bob Tolbert <bob@tolbert.org>
-
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
 
 (import [hy._compat [PY3]])
 
@@ -81,10 +64,12 @@
   (setv x 1)
   (setv y 1)
   (assert-equal x y)
-  (setv x (setv y  12))
+  (setv y 12)
+  (setv x y)
   (assert-equal x 12)
   (assert-equal y 12)
-  (setv x (setv y (fn [x] 9)))
+  (setv y (fn [x] 9))
+  (setv x y)
   (assert-equal (x y) 9)
   (assert-equal (y x) 9)
   (try (do (setv a.b 1) (assert False))
@@ -184,6 +169,49 @@
   (assert-false (every? even? [1 3 5]))
   (assert-false (every? even? [2 4 5]))
   (assert-true (every? even? [])))
+
+(setv globalvar 1)
+(defn test-exec []
+  (setv localvar 1)
+  (setv code "
+result['localvar in locals'] = 'localvar' in locals()
+result['localvar in globals'] = 'localvar' in globals()
+result['globalvar in locals'] = 'globalvar' in locals()
+result['globalvar in globals'] = 'globalvar' in globals()
+result['x in locals'] = 'x' in locals()
+result['x in globals'] = 'x' in globals()
+result['y in locals'] = 'y' in locals()
+result['y in globals'] = 'y' in globals()")
+
+  (setv result {})
+  (exec code)
+  (assert-true (get result "localvar in locals"))
+  (assert-false (get result "localvar in globals"))
+  (assert-false (get result "globalvar in locals"))
+  (assert-true (get result "globalvar in globals"))
+  (assert-false (or
+    (get result "x in locals") (get result "x in globals")
+    (get result "y in locals") (get result "y in globals")))
+
+  (setv result {})
+  (exec code {"x" 1 "result" result})
+  (assert-false (or
+    (get result "localvar in locals") (get result "localvar in globals")
+    (get result "globalvar in locals") (get result "globalvar in globals")))
+  (assert-true (and
+    (get result "x in locals") (get result "x in globals")))
+  (assert-false (or
+    (get result "y in locals") (get result "y in globals")))
+
+  (setv result {})
+  (exec code {"x" 1 "result" result} {"y" 1})
+  (assert-false (or
+    (get result "localvar in locals") (get result "localvar in globals")
+    (get result "globalvar in locals") (get result "globalvar in globals")))
+  (assert-false (get result "x in locals"))
+  (assert-true (get result "x in globals"))
+  (assert-true (get result "y in locals"))
+  (assert-false (get result "y in globals")))
 
 (defn test-filter []
   "NATIVE: testing the filter function"
@@ -621,20 +649,6 @@
   (assert-equal (list (accumulate [1 -2 -3 -4 -5] -))
                 [1 3 6 10 15]))
 
-(defn test-reserved []
-  (import [hy.core.reserved [names]])
-  (assert (is (type (names)) frozenset))
-  (assert (in "and" (names)))
-  (when PY3
-    (assert (in "False" (names))))
-  (assert (in "pass" (names)))
-  (assert (in "class" (names)))
-  (assert (in "defclass" (names)))
-  (assert (in "->" (names)))
-  (assert (in "keyword?" (names)))
-  (assert (not-in "foo" (names)))
-  (assert (not-in "hy" (names))))
-
 (defn test-complement []
   "NATIVE: test complement"
   (def helper (complement identity))
@@ -664,3 +678,7 @@
                 [1 6 21])
   (assert-equal ((juxt identity) 42)
                 [42]))
+
+(defn test-comment []
+  (assert-none (comment <h1>This is merely a comment.</h1>
+                        <p> Move along. (Nothing to see here.)</p>)))

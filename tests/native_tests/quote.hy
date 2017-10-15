@@ -1,4 +1,8 @@
-(import hy)
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
+
+(import [hy [HyExpression HySymbol HyString HyBytes]])
 
 
 (defn test-quote []
@@ -8,11 +12,18 @@
   (assert (= q [(quote a) (quote b) (quote c)])))
 
 
+(defn test-basic-quoting []
+  (assert (= (type (quote (foo bar))) HyExpression))
+  (assert (= (type (quote foo)) HySymbol))
+  (assert (= (type (quote "string")) HyString))
+  (assert (= (type (quote b"string")) HyBytes)))
+
+
 (defn test-quoted-hoistable []
   "NATIVE: check whether quote works on hoisted things"
   (setv f (quote (if True True True)))
-  (assert (= (car f) (quote if)))
-  (assert (= (cdr f) (quote (True True True)))))
+  (assert (= (get f 0) (quote if)))
+  (assert (= (cut f 1) (quote (True True True)))))
 
 
 (defn test-quoted-macroexpand []
@@ -20,8 +31,8 @@
   (setv q1 (quote (-> a b c)))
   (setv q2 (quasiquote (-> a b c)))
   (assert (= q1 q2))
-  (assert (= (car q1) (quote ->)))
-  (assert (= (cdr q1) (quote (a b c)))))
+  (assert (= (get q1 0) (quote ->)))
+  (assert (= (cut q1 1) (quote (a b c)))))
 
 
 (defn test-quote-dicts []
@@ -63,17 +74,17 @@
 (defn test-unquote-splice []
   "NATIVE: test splicing unquotes"
   (setv q (quote (c d e)))
-  (setv qq (quasiquote (a b (unquote-splice q) f (unquote-splice q))))
-  (assert (= (len qq) 9))
-  (assert (= qq (quote (a b c d e f c d e)))))
+  (setv qq `(a b ~@q f ~@q ~@0 ~@False ~@None g ~@(when False 1) h))
+  (assert (= (len qq) 11))
+  (assert (= qq (quote (a b c d e f c d e g h)))))
 
 
 (defn test-nested-quasiquote []
   "NATIVE: test nested quasiquotes"
-  (setv qq (quasiquote (1 (quasiquote (unquote (+ 1 (unquote (+ 2 3))))) 4)))
-  (setv q (quote (1 (quasiquote (unquote (+ 1 5))) 4)))
+  (setv qq `(1 `~(+ 1 ~(+ 2 3) ~@None) 4))
+  (setv q (quote (1 `~(+ 1 5) 4)))
   (assert (= (len q) 3))
-  (assert (= (get qq 1) (quote (quasiquote (unquote (+ 1 5))))))
+  (assert (= (get qq 1) (quote `~(+ 1 5))))
   (assert (= q qq)))
 
 

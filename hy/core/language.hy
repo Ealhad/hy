@@ -1,23 +1,6 @@
-;; Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-;; Copyright (c) 2013 Bob Tolbert <bob@tolbert.org>
-
-;; Permission is hereby granted, free of charge, to any person obtaining a
-;; copy of this software and associated documentation files (the "Software"),
-;; to deal in the Software without restriction, including without limitation
-;; the rights to use, copy, modify, merge, publish, distribute, sublicense,
-;; and/or sell copies of the Software, and to permit persons to whom the
-;; Software is furnished to do so, subject to the following conditions:
-
-;; The above copyright notice and this permission notice shall be included in
-;; all copies or substantial portions of the Software.
-
-;; THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-;; IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-;; FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-;; THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-;; LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-;; FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-;; DEALINGS IN THE SOFTWARE.
+;; Copyright 2017 the authors.
+;; This file is part of Hy, which is free software licensed under the Expat
+;; license. See the LICENSE.
 
 ;;;; This contains some of the core Hy functions used
 ;;;; to make functional programming slightly easier.
@@ -35,7 +18,8 @@
 (import [hy._compat [long-type]]) ; long for python2, int for python3
 (import [hy.models [HyCons HySymbol HyKeyword]])
 (import [hy.lex [LexException PrematureEndOfInput tokenize]])
-(import [hy.compiler [HyASTCompiler]])
+(import [hy.compiler [HyASTCompiler spoof-positions]])
+(import [hy.importer [hy-eval :as eval]])
 
 (defn butlast [coll]
   "Returns coll except of last element."
@@ -53,7 +37,7 @@
                 first-f (next rfs)
                 fs (tuple rfs))
           (fn [&rest args &kwargs kwargs]
-            (setv res (apply first-f args kwargs))
+            (setv res (first-f #* args #** kwargs))
             (for* [f fs]
               (setv res (f res)))
             res))))
@@ -61,7 +45,7 @@
 (defn complement [f]
   "Create a function that reverses truth value of another function"
   (fn [&rest args &kwargs kwargs]
-    (not (apply f args kwargs))))
+    (not (f #* args #** kwargs))))
 
 (defn cons [a b]
   "Return a fresh cons cell with car = a and cdr = b"
@@ -91,8 +75,8 @@
   (import astor)
   (import hy.compiler)
 
-  (fake-source-positions tree)
-  (setv compiled (hy.compiler.hy_compile tree (calling-module-name)))
+  (spoof-positions tree)
+  (setv compiled (hy.compiler.hy-compile tree (calling-module-name)))
   ((if codegen
             astor.codegen.to_source
             astor.dump)
@@ -132,6 +116,24 @@
    map map
    range range
    zip zip))
+
+(if-python2
+  (defn exec [$code &optional $globals $locals]
+    "Execute Python code.
+
+    The parameter names contain weird characters to discourage calling this
+    function with keyword arguments, which isn't supported by Python 3's
+    `exec`."
+    (if
+      (none? $globals) (do
+        (setv frame (._getframe sys (int 1)))
+        (try
+          (setv $globals frame.f_globals  $locals frame.f_locals)
+          (finally (del frame))))
+      (none? $locals)
+        (setv $locals $globals))
+    (exec* $code $globals $locals))
+  (def exec exec))
 
 ;; infinite iterators
 (def
@@ -176,8 +178,8 @@
 (defn drop-last [n coll]
   "Return a sequence of all but the last n elements in coll."
   (setv iters (tee coll))
-  (map first (apply zip [(get iters 0)
-                         (drop n (get iters 1))])))
+  (map first (zip #* [(get iters 0)
+                      (drop n (get iters 1))])))
 
 (defn empty? [coll]
   "Return True if `coll` is empty"
@@ -190,15 +192,6 @@
 (defn every? [pred coll]
   "Return true if (pred x) is logical true for every x in coll, else false"
   (all (map pred coll)))
-
-(defn fake-source-positions [tree]
-  "Fake the source positions for a given tree"
-  (if (coll? tree)
-    (for* [subtree tree]
-          (fake-source-positions subtree)))
-  (for* [attr '[start-line end-line start-column end-column]]
-        (if (not (hasattr tree attr))
-          (setattr tree attr 1))))
 
 (defn flatten [coll]
   "Return a single flat list expanding all members of coll"
@@ -275,7 +268,7 @@
 
 (defn interleave [&rest seqs]
   "Return an iterable of the first item in each of seqs, then the second etc."
-  (chain.from-iterable (apply zip seqs)))
+  (chain.from-iterable (zip #* seqs)))
 
 (defn interpose [item seq]
   "Return an iterable of the elements of seq separated by item"
@@ -300,7 +293,7 @@
    set of arguments and collects the results into a list."
   (setv fs (cons f fs))
   (fn [&rest args &kwargs kwargs]
-    (list-comp (apply f args kwargs) [f fs])))
+    (list-comp (f #* args #** kwargs) [f fs])))
 
 (defn last [coll]
   "Return last item from `coll`"
@@ -310,7 +303,7 @@
   "Return a dotted list construed from the elements of the argument"
   (if (not tl)
     hd
-    (cons hd (apply list* tl))))
+    (cons hd (list* #* tl))))
 
 (defn macroexpand [form]
   "Return the full macro expansion of form"
@@ -335,9 +328,9 @@
     (do
       (defn merge-entry [m e]
         (setv k (get e 0) v (get e 1))
-        (if (in k m)
-          (assoc m k (f (get m k) v))
-          (assoc m k v))
+        (setv (get m k) (if (in k m)
+                          (f (get m k) v)
+                          v))
         m)
       (defn merge2 [m1 m2]
         (reduce merge-entry (.items m2) (or m1 {})))
@@ -375,8 +368,8 @@
    slices (genexpr (islice (get coll-clones start) start None step)
                    [start (range n)]))
   (if (is fillvalue -sentinel)
-    (apply zip slices)
-    (apply zip-longest slices {"fillvalue" fillvalue})))
+    (zip #* slices)
+    (zip-longest #* slices :fillvalue fillvalue)))
 
 (defn pos? [n]
   "Return true if n is > 0"
@@ -433,19 +426,19 @@
 
 (defn read [&optional [from-file sys.stdin]
                       [eof ""]]
-  "Read from input and returns a tokenized string.
-   Can take a given input buffer to read from"
-  (def buff "")
+  "Read from input and returns a tokenized string. Can take a given input buffer
+   to read from, and a single byte as EOF (defaults to an empty string)"
+  (setv buff "")
   (while True
-    (def inn (str (.readline from-file)))
+    (setv inn (string (.readline from-file)))
     (if (= inn eof)
-      (raise (EOFError "Reached end of file" )))
-    (setv buff (+ buff inn))
+      (raise (EOFError "Reached end of file")))
+    (+= buff inn)
     (try
-      (def parsed (first (tokenize buff)))
+      (setv parsed (first (tokenize buff)))
       (except [e [PrematureEndOfInput IndexError]])
-      (else (if parsed (break)))))
-    parsed)
+      (else (break))))
+  parsed)
 
 (defn read-str [input]
   "Reads and tokenizes first line of input"
@@ -486,8 +479,8 @@
 (def *exports*
   '[*map accumulate butlast calling-module-name chain coll? combinations
     comp complement compress cons cons? constantly count cycle dec distinct
-    disassemble drop drop-last drop-while empty? even? every? first filter
-    flatten float? fraction gensym group-by identity inc input instance?
+    disassemble drop drop-last drop-while empty? eval even? every? exec first
+    filter flatten float? fraction gensym group-by identity inc input instance?
     integer integer? integer-char? interleave interpose islice iterable?
     iterate iterator? juxt keyword keyword? last list* macroexpand
     macroexpand-1 map merge-with multicombinations name neg? none? nth

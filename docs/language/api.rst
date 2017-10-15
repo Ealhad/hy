@@ -44,26 +44,96 @@ integers is used. ``0x`` for Hex, ``0o`` for Octal, ``0b`` for Binary.
     
     (print 0x80 0b11101 0o102 30)
 
-Underscores and commas can appear anywhere in a numeric literal. They have no
-effect on the value of the literal, but they're useful for visually separating
-digits.
+Underscores and commas can appear anywhere in a numeric literal except the very
+beginning. They have no effect on the value of the literal, but they're useful
+for visually separating digits.
 
 .. code-block:: clj
 
     (print 10,000,000,000 10_000_000_000)
 
+Unlike Python, Hy provides literal forms for NaN and infinity: ``NaN``,
+``Inf``, and ``-Inf``.
+
 string literals
 ---------------
 
-Unlike Python, Hy allows only double-quoted strings. The single-quote character
-is reserved for preventing the evaluation of a form, as in most Lisps.
+Hy allows double-quoted strings (e.g., ``"hello"``), but not single-quoted
+strings like Python. The single-quote character ``'`` is reserved for
+preventing the evaluation of a form (e.g., ``'(+ 1 1)``), as in most Lisps.
 
-Whether running under Python 2 or Python 3, Hy treats string literals as
-sequences of Unicode characters by default, and allows you to prefix a literal
-with ``b`` to treat it as a sequence of bytes. So when running under Python 3,
-Hy translates ``"foo"`` and ``b"foo"`` to the identical Python code, but when
-running under Python 2, ``"foo"`` is translated to ``u"foo"`` and ``b"foo"`` is
-translated to ``"foo"``.
+Python's so-called triple-quoted strings (e.g., ``'''hello'''`` and
+``"""hello"""``) aren't supported. However, in Hy, unlike Python, any string
+literal can contain newlines. Furthermore, Hy supports an alternative form of
+string literal called a "bracket string" similar to Lua's long brackets.
+Bracket strings have customizable delimiters, like the here-documents of other
+languages. A bracket string begins with ``#[FOO[`` and ends with ``]FOO]``,
+where ``FOO`` is any string not containing ``[`` or ``]``, including the empty
+string. For example::
+
+   => (print #[["That's very kind of yuo [sic]" Tom wrote back.]])
+   "That's very kind of yuo [sic]" Tom wrote back.
+   => (print #[==[1 + 1 = 2]==])
+   1 + 1 = 2
+
+A bracket string can contain newlines, but if it begins with one, the newline
+is removed, so you can begin the content of a bracket string on the line
+following the opening delimiter with no effect on the content. Any leading
+newlines past the first are preserved.
+
+Plain string literals support :ref:`a variety of backslash escapes
+<py:strings>`. To create a "raw string" that interprets all backslashes
+literally, prefix the string with ``r``, as in ``r"slash\not"``. Bracket
+strings are always raw strings and don't allow the ``r`` prefix.
+
+Whether running under Python 2 or Python 3, Hy treats all string literals as
+sequences of Unicode characters by default, and allows you to prefix a plain
+string literal (but not a bracket string) with ``b`` to treat it as a sequence
+of bytes. So when running under Python 3, Hy translates ``"foo"`` and
+``b"foo"`` to the identical Python code, but when running under Python 2,
+``"foo"`` is translated to ``u"foo"`` and ``b"foo"`` is translated to
+``"foo"``.
+
+.. _syntax-keywords:
+
+keywords
+--------
+
+An identifier headed by a colon, such as ``:foo``, is a keyword. Keywords
+evaluate to a string preceded by the Unicode non-character code point U+FDD0,
+like ``"\ufdd0:foo"``, so ``:foo`` and ``":foo"`` aren't equal. However, if a
+literal keyword appears in a function call, it's used to indicate a keyword
+argument rather than passed in as a value. For example, ``(f :foo 3)`` calls
+the function ``f`` with the keyword argument named ``foo`` set to ``3``. Hence,
+trying to call a function on a literal keyword may fail: ``(f :foo)`` yields
+the error ``Keyword argument :foo needs a value``. To avoid this, you can quote
+the keyword, as in ``(f ':foo)``, or use it as the value of another keyword
+argument, as in ``(f :arg :foo)``.
+
+discard prefix
+--------------
+
+Hy supports the Extensible Data Notation discard prefix, like Clojure.
+Any form prefixed with ``#_`` is discarded instead of compiled.
+This completely removes the form so it doesn't evaluate to anything,
+not even None.
+It's often more useful than linewise comments for commenting out a
+form, because it respects code structure even when part of another
+form is on the same line. For example:
+
+.. code-block:: clj
+
+   => (print "Hy" "cruel" "World!")
+   Hy cruel World!
+   => (print "Hy" #_"cruel" "World!")
+   Hy World!
+   => (+ 1 1 (print "Math is hard!"))
+   Math is hard!
+   Traceback (most recent call last):
+      ...
+   TypeError: unsupported operand type(s) for +: 'int' and 'NoneType'
+   => (+ 1 1 #_(print "Math is hard!"))
+   2
 
 Built-Ins
 =========
@@ -129,41 +199,6 @@ it appends it as the last argument. The following code demonstrates this:
     => (->> (+ 4 6) (output 5))
     5 10
 
-
-apply
------
-
-``apply`` is used to apply an optional list of arguments and an
-optional dictionary of kwargs to a function. The symbol mangling
-transformations will be applied to all keys in the dictionary of
-kwargs, provided the dictionary and its keys are defined in-place.
-
-Usage: ``(apply fn-name [args] [kwargs])``
-
-Examples:
-
-.. code-block:: clj
-
-    (defn thunk []
-      "hy there")
-
-    (apply thunk)
-    ;=> "hy there"
-
-    (defn total-purchase [price amount &optional [fees 1.05] [vat 1.1]]
-      (* price amount fees vat))
-
-    (apply total-purchase [10 15])
-    ;=> 173.25
-
-    (apply total-purchase [10 15] {"vat" 1.05})
-    ;=> 165.375
-
-    (apply total-purchase [] {"price" 10 "amount" 15 "vat" 1.05})
-    ;=> 165.375
-
-    (apply total-purchase [] {:price 10 :amount 15 :vat 1.05})
-    ;=> 165.375
 
 and
 ---
@@ -339,6 +374,30 @@ as the user enters *k*.
                   (print "Try again")))
 
 
+comment
+----
+
+The ``comment`` macro ignores its body and always expands to ``None``.
+Unlike linewise comments, the body of the ``comment`` macro must
+be grammatically valid Hy, so the compiler can tell where the comment ends.
+Besides the semicolon linewise comments,
+Hy also has the ``#_`` discard prefix syntax to discard the next form.
+This is completely discarded and doesn't expand to anything, not even ``None``.
+
+.. code-block:: clj
+
+   => (print (comment <h1>Suprise!</h1>
+   ...                <p>You'd be surprised what's grammatically valid in Hy.</p>
+   ...                <p>(Keep delimiters in balance, and you're mostly good to go.)</p>)
+   ...        "Hy")
+   None Hy
+   => (print #_(comment <h1>Suprise!</h1>
+   ...                  <p>You'd be surprised what's grammatically valid in Hy.</p>
+   ...                  <p>(Keep delimiters in balance, and you're mostly good to go.)</p>))
+   ...        "Hy")
+   Hy
+
+
 cond
 ----
 
@@ -352,6 +411,18 @@ shows the relationship between the macro and its expansion:
 
     (if condition-1 result-1
       (if condition-2 result-2))
+
+If only the condition is given in a branch, then the condition is also used as
+the result. The expansion of this single argument version is demonstrated
+below:
+
+.. code-block:: clj
+
+    (cond [condition-1]
+          [condition-2])
+
+    (if condition-1 condition-1
+      (if condition-2 condition-2))
 
 As shown below, only the first matching result block is executed.
 
@@ -560,8 +631,8 @@ Parameters may have the following keywords in front of them:
         parameter_1 1
         parameter_2 2
 
-        ; to avoid the mangling of '-' to '_', use apply:
-        => (apply print-parameters [] {"parameter-1" 1 "parameter-2" 2})
+        ; to avoid the mangling of '-' to '_', use unpacking:
+        => (print-parameters #** {"parameter-1" 1 "parameter-2" 2})
         parameter-1 1
         parameter-2 2
 
@@ -598,19 +669,19 @@ Parameters may have the following keywords in front of them:
 
     .. code-block:: clj
 
-        => (defn compare [a b &kwonly keyfn [reverse false]]
+        => (defn compare [a b &kwonly keyfn [reverse False]]
         ...  (setv result (keyfn a b))
         ...  (if (not reverse)
         ...    result
         ...    (- result)))
-        => (apply compare ["lisp" "python"]
-        ...        {"keyfn" (fn [x y]
-        ...                   (reduce - (map (fn [s] (ord (first s))) [x y])))})
+        => (compare "lisp" "python"
+        ...         :keyfn (fn [x y]
+        ...                  (reduce - (map (fn [s] (ord (first s))) [x y]))))
         -4
-        => (apply compare ["lisp" "python"]
-        ...        {"keyfn" (fn [x y]
+        => (compare "lisp" "python"
+        ...         :keyfn (fn [x y]
         ...                   (reduce - (map (fn [s] (ord (first s))) [x y])))
-        ...         "reverse" True})
+        ...         :reverse True)
         4
 
     .. code-block:: python
@@ -730,7 +801,7 @@ For example,
 .. code-block:: clj
 
     => (defn expensive-get-number [] (print "spam") 14)
-    => (defmacro triple-1 [n] `(+ n n n))
+    => (defmacro triple-1 [n] `(+ ~n ~n ~n))
     => (triple-1 (expensive-get-number))  ; evals n three times
     spam
     spam
@@ -746,25 +817,35 @@ For example,
     42
 
 
-defreader
----------
+deftag
+--------
 
-.. versionadded:: 0.9.12
+.. versionadded:: 0.13.0
 
-``defreader`` defines a reader macro, enabling you to restructure or
-modify syntax.
+``deftag`` defines a tag macro. A tag macro is a unary macro that has the
+same semantics as an ordinary macro defined with ``defmacro``. It is called with
+the syntax ``#tag FORM``, where ``tag`` is the name of the macro, and ``FORM``
+is any form. The ``tag`` is often only one character, but it can be any symbol.
 
 .. code-block:: clj
 
-    => (defreader ^ [expr] (print expr))
-    => #^(1 2 3 4)
-    (1 2 3 4)
-    => #^"Hello"
-    "Hello"
+    => (deftag ♣ [expr] `[~expr ~expr])
+    <function <lambda> at 0x7f76d0271158>
+    => #♣ 5
+    [5, 5]
+    => (setv x 0)
+    => #♣(+= x 1)
+    [None, None]
+    => x
+    2
 
-.. seealso::
+In this example, if you used ``(defmacro ♣ ...)`` instead of ``(deftag
+♣ ...)``, you would call the macro as ``(♣ 5)`` or ``(♣ (+= x 1))``.
 
-    Section :ref:`Reader Macros <reader-macros>`
+The syntax for calling tag macros is similar to that of reader macros a la
+Common Lisp's ``SET-MACRO-CHARACTER``. In fact, before Hy 0.13.0, tag macros
+were called "reader macros", and defined with ``defreader`` rather than
+``deftag``. True reader macros are not (yet) implemented in Hy.
 
 del
 ---
@@ -809,7 +890,7 @@ doto
 .. code-block:: clj
 
   => (doto [] (.append 1) (.append 2) .reverse)
-  [2 1]
+  [2, 1]
 
 .. code-block:: clj
 
@@ -818,28 +899,7 @@ doto
   => (.append collection 2)
   => (.reverse collection)
   => collection
-  [2 1]
-
-eval
-----
-
-``eval`` evaluates a quoted expression and returns the value. The optional
-second and third arguments specify the dictionary of globals to use and the
-module name. The globals dictionary defaults to ``(local)`` and the module name
-defaults to the name of the current module.
-
-.. code-block:: clj
-
-   => (eval '(print "Hello World"))
-   "Hello World"
-
-If you want to evaluate a string, use ``read-str`` to convert it to a
-form first:
-
-.. code-block:: clj
-
-   => (eval (read-str "(+ 1 1)"))
-   2
+  [2, 1]
 
 
 eval-and-compile
@@ -850,16 +910,26 @@ eval-when-compile
 -----------------
 
 
-first / car
------------
+first
+-----
 
-``first`` and ``car`` are macros for accessing the first element of a collection:
+``first`` is a function for accessing the first element of a collection.
 
 .. code-block:: clj
 
     => (first (range 10))
     0
 
+It is implemented as ``(next (iter coll) None)``, so it works with any
+iterable, and if given an empty iterable, it will return ``None`` instead of
+raising an exception.
+
+.. code-block:: clj
+
+    => (first (repeat 10))
+    10
+    => (first [])
+    None
 
 for
 ---
@@ -1313,9 +1383,10 @@ alternatively be written using the apostrophe (``'``) symbol.
 .. code-block:: clj
 
     => (setv x '(print "Hello World"))
-    ; variable x is set to expression & not evaluated
-    => x
-    (u'print' u'Hello World')
+    => x  ; varible x is set to unevaluated expression
+    HyExpression([
+      HySymbol('print'),
+      HyString('Hello World')])
     => (eval x)
     Hello World
 
@@ -1402,17 +1473,55 @@ periods in them. In fact, ``mymodule`` and ``M`` aren't defined by these
 to do introspection of the current module's set of defined macros, which isn't
 really supported anyway.
 
-rest / cdr
-----------
+rest
+----
 
-``rest`` and ``cdr`` return the collection passed as an argument without the
-first element:
+``rest`` takes the given collection and returns an iterable of all but the
+first element.
 
 .. code-block:: clj
 
-    => (rest (range 10))
+    => (list (rest (range 10)))
     [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
+Given an empty collection, it returns an empty iterable.
+
+.. code-block:: clj
+
+    => (list (rest []))
+    []
+
+return
+-------
+
+``return`` compiles to a :py:keyword:`return` statement. It exits the
+current function, returning its argument if provided with one or
+``None`` if not.
+
+.. code-block:: hy
+
+    => (defn f [x] (for [n (range 10)] (when (> n x) (return n))))
+    => (f 3.9)
+    4
+
+Note that in Hy, ``return`` is necessary much less often than in Python,
+since the last form of a function is returned automatically. Hence, an
+explicit ``return`` is only necessary to exit a function early.
+
+.. code-block:: hy
+
+    => (defn f [x] (setv y 10) (+ x y))
+    => (f 4)
+    14
+
+To get Python's behavior of returning ``None`` when execution reaches
+the end of a function, put ``None`` there yourself.
+
+.. code-block:: hy
+
+    => (defn f [x] (setv y 10) (+ x y) None)
+    => (print (f 4))
+    None
 
 set-comp
 --------
@@ -1487,23 +1596,37 @@ or no arguments to re-raise the last ``Exception``.
 try
 ---
 
-The ``try`` form is used to start a ``try`` / ``except`` block. The form is
-used as follows:
+The ``try`` form is used to catch exceptions (``except``) and run cleanup
+actions (``finally``).
 
 .. code-block:: clj
 
     (try
-        (error-prone-function)
-        (except [e ZeroDivisionError] (print "Division by zero"))
-        (else (print "no errors"))
-        (finally (print "all done")))
+      (error-prone-function)
+      (except [ZeroDivisionError]
+        (print "Division by zero"))
+      (except [[IndexError KeyboardInterrupt]]
+        (print "Index error or Ctrl-C"))
+      (except [e ValueError]
+        (print "ValueError:" (repr e)))
+      (except [e [TabError PermissionError ReferenceError]]
+        (print "Some sort of error:" (repr e)))
+      (else
+        (print "No errors"))
+      (finally
+        (print "All done")))
 
-``try`` must contain at least one ``except`` block, and may optionally include
-an ``else`` or ``finally`` block. If an error is raised with a matching except
-block during the execution of ``error-prone-function``, that ``except`` block
-will be executed. If no errors are raised, the ``else`` block is executed. The
-``finally`` block will be executed last regardless of whether or not an error
-was raised.
+The first argument of ``try`` is its body. (To put more than one form in the
+body, use ``do``.) Then comes any number of ``except`` clauses, then optionally
+an ``else`` clause, then optionally a ``finally`` clause. If an exception is
+raised with a matching ``except`` clause during the execution of the body, that
+``except`` clause will be executed. If no exceptions are raised, the ``else``
+clause is executed. The ``finally`` clause will be executed last regardless of
+whether an exception was raised.
+
+The return value of ``try`` is the last form of the ``except`` clause that was
+run, or the last form of ``else`` if no exception was raised, or the ``try``
+body if there is no ``else`` clause.
 
 
 unless
@@ -1521,6 +1644,49 @@ the given conditional is ``False``. The following shows the expansion of this ma
       (do statement))
 
 
+unpack-iterable, unpack-mapping
+-------------------------------
+
+``unpack-iterable`` and ``unpack-mapping`` allow an iterable or mapping
+object (respectively) to provide positional or keywords arguments
+(respectively) to a function.
+
+.. code-block:: clj
+
+    => (defn f [a b c d] [a b c d])
+    => (f (unpack-iterable [1 2]) (unpack-mapping {"c" 3 "d" 4}))
+    [1, 2, 3, 4]
+
+``unpack-iterable`` is usually written with the shorthand ``#*``, and
+``unpack-mapping`` with ``#**``.
+
+.. code-block:: clj
+
+    => (f #* [1 2] #** {"c" 3 "d" 4})
+    [1, 2, 3, 4]
+
+With Python 3, you can unpack in an assignment list (:pep:`3132`).
+
+.. code-block:: clj
+
+    => (setv [a #* b c] [1 2 3 4 5])
+    => [a b c]
+    [1, [2, 3, 4], 5]
+
+With Python 3.5 or greater, unpacking is allowed in more contexts than just
+function calls, and you can unpack more than once in the same expression
+(:pep:`448`).
+
+.. code-block:: clj
+
+    => [#* [1 2] #* [3 4]]
+    [1, 2, 3, 4]
+    => {#** {1 2} #** {3 4}}
+    {1: 2, 3: 4}
+    => (f #* [1] #* [2] #** {"c" 3} #** {"d" 4})
+    [1, 2, 3, 4]
+
+
 unquote
 -------
 
@@ -1529,31 +1695,58 @@ is aliased to the tilde (``~``) symbol.
 
 .. code-block:: clj
 
-    (def name "Cuddles")
-    (quasiquote (= name (unquote name)))
-    ;=> (u'=' u'name' u'Cuddles')
-
-    `(= name ~name)
-    ;=> (u'=' u'name' u'Cuddles')
+    => (setv nickname "Cuddles")
+    => (quasiquote (= nickname (unquote nickname)))
+    HyExpression([
+      HySymbol('='),
+      HySymbol('nickname'),
+      'Cuddles'])
+    => `(= nickname ~nickname)
+    HyExpression([
+      HySymbol('='),
+      HySymbol('nickname'),
+      'Cuddles'])
 
 
 unquote-splice
 --------------
 
 ``unquote-splice`` forces the evaluation of a symbol within a quasiquoted form,
-much like ``unquote``. ``unquote-splice`` can only be used when the symbol
+much like ``unquote``. ``unquote-splice`` can be used when the symbol
 being unquoted contains an iterable value, as it "splices" that iterable into
-the quasiquoted form. ``unquote-splice`` is aliased to the ``~@`` symbol.
+the quasiquoted form. ``unquote-splice`` can also be used when the value
+evaluates to a false value such as ``None``, ``False``, or ``0``, in which
+case the value is treated as an empty list and thus does not splice anything
+into the form. ``unquote-splice`` is aliased to the ``~@`` syntax.
 
 .. code-block:: clj
 
-    (def nums [1 2 3 4])
-    (quasiquote (+ (unquote-splice nums)))
-    ;=> (u'+' 1L 2L 3L 4L)
+    => (setv nums [1 2 3 4])
+    => (quasiquote (+ (unquote-splice nums)))
+    HyExpression([
+      HySymbol('+'),
+      1,
+      2,
+      3,
+      4])
+    => `(+ ~@nums)
+    HyExpression([
+      HySymbol('+'),
+      1,
+      2,
+      3,
+      4])
+    => `[1 2 ~@(if (neg? (first nums)) nums)]
+    HyList([
+      HyInteger(1),
+      HyInteger(2)])
 
-    `(+ ~@nums)
-    ;=> (u'+' 1L 2L 3L 4L)
-
+Here, the last example evaluates to ``('+' 1 2)``, since the condition
+``(< (nth nums 0) 0)`` is ``False``, which makes this ``if`` expression
+evaluate to ``None``, because the ``if`` expression here does not have an
+else clause. ``unquote-splice`` then evaluates this as an empty value,
+leaving no effects on the list it is enclosed in, therefore resulting in
+``('+' 1 2)``.
 
 when
 ----
@@ -1603,6 +1796,13 @@ screen. The file is automatically closed after it has been processed.
 
     (with [f (open "NEWS")] (print (.read f)))
 
+``with`` returns the value of its last form, unless it suppresses an exception
+(because the context manager's ``__exit__`` method returned true), in which
+case it returns ``None``. So, the previous example could also be written
+
+.. code-block:: clj
+
+    (print (with [f (open "NEWS")] (.read f)))
 
 with-decorator
 --------------
@@ -1649,17 +1849,13 @@ will be 4 (``1+1 + 1+1``).
     => (addition 1 1)
     8
 
-In addition to ``defn`` forms, ``with-decorator`` can be used with ``defclass``
-and ``setv`` forms. In the latter case, the generated Python code uses an
-ordinary function call rather than decorator syntax.
-
 #@
 ~~
 
 .. versionadded:: 0.12.0
 
-The :ref:`reader macro<reader-macros>` ``#@`` can be used as a shorthand
-for ``with-decorator``. With ``#@``, the previous example becomes:
+The tag macro ``#@`` can be used as a shorthand for ``with-decorator``. With
+``#@``, the previous example becomes:
 
 .. code-block:: clj
 

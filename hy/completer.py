@@ -1,29 +1,6 @@
-# Copyright (c) 2013 Paul Tagliamonte <paultag@debian.org>
-# Copyright (c) 2013 Gergely Nagy <algernon@madhouse-project.org>
-# Copyright (c) 2013 James King <james@agentultra.com>
-# Copyright (c) 2013 Julien Danjou <julien@danjou.info>
-# Copyright (c) 2013 Konrad Hinsen <konrad.hinsen@fastmail.net>
-# Copyright (c) 2013 Thom Neale <twneale@gmail.com>
-# Copyright (c) 2013 Will Kahn-Greene <willg@bluesock.org>
-# Copyright (c) 2013 Ralph Moritz <ralph.moeritz@outlook.com>
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
+# Copyright 2017 the authors.
+# This file is part of Hy, which is free software licensed under the Expat
+# license. See the LICENSE.
 
 import contextlib
 import os
@@ -47,10 +24,11 @@ except ImportError:
     except ImportError:
         docomplete = False
 
-if sys.platform == 'darwin' and 'libedit' in readline.__doc__:
-    readline_bind = "bind ^I rl_complete"
-else:
-    readline_bind = "tab: complete"
+if docomplete:
+    if sys.platform == 'darwin' and 'libedit' in readline.__doc__:
+        readline_bind = "bind ^I rl_complete"
+    else:
+        readline_bind = "tab: complete"
 
 
 class Completer(object):
@@ -63,11 +41,11 @@ class Completer(object):
                      builtins.__dict__,
                      hy.macros._hy_macros[None],
                      namespace]
-        self.reader_path = [hy.macros._hy_reader[None]]
+        self.tag_path = [hy.macros._hy_tag[None]]
         if '__name__' in namespace:
             module_name = namespace['__name__']
             self.path.append(hy.macros._hy_macros[module_name])
-            self.reader_path.append(hy.macros._hy_reader[module_name])
+            self.tag_path.append(hy.macros._hy_tag[module_name])
 
     def attr_matches(self, text):
         # Borrowed from IPython's completer
@@ -104,10 +82,10 @@ class Completer(object):
                         matches.append(k)
         return matches
 
-    def reader_matches(self, text):
+    def tag_matches(self, text):
         text = text[1:]
         matches = []
-        for p in self.reader_path:
+        for p in self.tag_path:
             for k in p.keys():
                 if isinstance(k, string_types):
                     if k.startswith(text):
@@ -116,7 +94,7 @@ class Completer(object):
 
     def complete(self, text, state):
         if text.startswith("#"):
-            matches = self.reader_matches(text)
+            matches = self.tag_matches(text)
         elif "." in text:
             matches = self.attr_matches(text)
         else:
@@ -147,7 +125,8 @@ def completion(completer=None):
 
         readline.parse_and_bind(readline_bind)
 
-    yield
-
-    if docomplete:
-        readline.write_history_file(history)
+    try:
+        yield
+    finally:
+        if docomplete:
+            readline.write_history_file(history)
